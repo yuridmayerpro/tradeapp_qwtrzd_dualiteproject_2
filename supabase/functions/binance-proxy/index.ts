@@ -22,7 +22,7 @@ async function createHmacSha256Signature(secretKey: string, data: string): Promi
 const BINANCE_API_URL = 'https://api.binance.com';
 
 serve(async (req: Request) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight requests immediately
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -59,13 +59,15 @@ serve(async (req: Request) => {
 
     // 4. Prepare and sign the request for Binance
     const timestamp = Date.now();
-    const queryString = `timestamp=${timestamp}`;
+    const recvWindow = 5000; // Add a 5-second reception window for security
+    const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
     const signature = await createHmacSha256Signature(secretKey, queryString);
 
     const url = `${BINANCE_API_URL}/api/v3/account?${queryString}&signature=${signature}`;
 
     // 5. Make the request to Binance
     const binanceResponse = await fetch(url, {
+      method: 'GET',
       headers: {
         'X-MBX-APIKEY': apiKey,
       },
