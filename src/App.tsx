@@ -11,8 +11,9 @@ import TimezoneSelector from './components/TimezoneSelector';
 import AuthControl from './components/AuthControl';
 import BinanceConnectModal from './components/BinanceConnectModal';
 import BinanceWalletInfo from './components/BinanceWalletInfo';
-import { Asset, CandleData, IndicatorParams, Signal, IndicatorData, FullCandleData, BinanceAsset, BinanceAccount } from './types';
-import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData, fetchBinanceAccountData, fetchAllTickerPrices } from './utils/api';
+import OrderHistoryPanel from './components/OrderHistoryPanel';
+import { Asset, CandleData, IndicatorParams, Signal, IndicatorData, FullCandleData, BinanceAsset, BinanceAccount, BinanceTrade, BinanceOrder } from './types';
+import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData, fetchBinanceAccountData, fetchAllTickerPrices, fetchBinanceMyTrades, fetchBinanceOpenOrders } from './utils/api';
 import { generateSignalsAndIndicators } from './utils/technicalIndicators';
 import { LoaderCircle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
@@ -44,11 +45,16 @@ function App() {
   const [timezone, setTimezone] = useState<string>('America/Sao_Paulo');
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
 
-  // State for Binance Wallet
+  // State for Binance Data
   const [isBinanceConnected, setIsBinanceConnected] = useState(false);
   const [binanceAccountData, setBinanceAccountData] = useState<BinanceAccount | null>(null);
   const [isBinanceDataLoading, setIsBinanceDataLoading] = useState(false);
   const [binanceDataError, setBinanceDataError] = useState<Error | null>(null);
+  
+  const [binanceTrades, setBinanceTrades] = useState<BinanceTrade[]>([]);
+  const [binanceOpenOrders, setBinanceOpenOrders] = useState<BinanceOrder[]>([]);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<Error | null>(null);
 
   const saveParamsTimeoutRef = useRef<number | null>(null);
 
@@ -74,7 +80,7 @@ function App() {
   }, []);
 
   const loadBinanceWalletData = useCallback(async () => {
-    if (!user) return;
+    if (!user || !isBinanceConnected) return;
     setIsBinanceDataLoading(true);
     setBinanceDataError(null);
     try {
@@ -85,7 +91,25 @@ function App() {
     } finally {
       setIsBinanceDataLoading(false);
     }
-  }, [user]);
+  }, [user, isBinanceConnected]);
+
+  const loadBinanceHistory = useCallback(async (assetSymbol: string) => {
+    if (!user || !isBinanceConnected) return;
+    setIsOrdersLoading(true);
+    setOrdersError(null);
+    try {
+      const [trades, openOrders] = await Promise.all([
+        fetchBinanceMyTrades(assetSymbol),
+        fetchBinanceOpenOrders(assetSymbol),
+      ]);
+      setBinanceTrades(trades);
+      setBinanceOpenOrders(openOrders);
+    } catch (error: any) {
+      setOrdersError(error);
+    } finally {
+      setIsOrdersLoading(false);
+    }
+  }, [user, isBinanceConnected]);
 
   // Main data loading effect
   useEffect(() => {
@@ -100,7 +124,7 @@ function App() {
       if (user) {
         const { data, error } = await supabase
           .from('user_settings')
-          .select('*')
+          .select('binance_api_key, selected_asset, indicator_params')
           .eq('id', user.id)
           .single();
         
@@ -126,20 +150,21 @@ function App() {
       setAllBinanceAssets(assets);
       setPriceMap(prices);
       
-      await Promise.all([
-        updateTickerData(),
-        loadAssetData(assetToLoad)
-      ]);
+      await loadAssetData(assetToLoad);
+      await updateTickerData();
 
       if (binanceConnected) {
-        loadBinanceWalletData();
+        await Promise.all([
+            loadBinanceWalletData(),
+            loadBinanceHistory(assetToLoad)
+        ]);
       }
 
       setIsInitialDataLoaded(true);
     };
 
     performInitialLoad();
-  }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData]);
+  }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData, loadBinanceHistory]);
 
 
   // Interval updates
@@ -207,8 +232,12 @@ function App() {
     }
     
     setSelectedAsset(symbol);
-    loadAssetData(symbol);
     setIsAssetModalOpen(false);
+    
+    await loadAssetData(symbol);
+    if (isBinanceConnected) {
+        await loadBinanceHistory(symbol);
+    }
 
     if (user) {
       const { error } = await supabase
@@ -222,10 +251,13 @@ function App() {
     }
   };
 
-  const handleBinanceConnectSuccess = () => {
+  const handleBinanceConnectSuccess = async () => {
     setIsBinanceConnected(true);
-    loadBinanceWalletData();
     setIsBinanceModalOpen(false);
+    await Promise.all([
+        loadBinanceWalletData(),
+        loadBinanceHistory(selectedAsset)
+    ]);
   };
 
   const adxHistory = fullData.map(d => d.adx);
@@ -286,14 +318,23 @@ function App() {
         )}
         
         {isBinanceConnected && (
-          <BinanceWalletInfo
-            accountData={binanceAccountData}
-            isLoading={isBinanceDataLoading}
-            error={binanceDataError}
-            selectedAssetSymbol={selectedAsset}
-            onRetry={loadBinanceWalletData}
-            priceMap={priceMap}
-          />
+          <>
+            <BinanceWalletInfo
+              accountData={binanceAccountData}
+              isLoading={isBinanceDataLoading}
+              error={binanceDataError}
+              selectedAssetSymbol={selectedAsset}
+              onRetry={loadBinanceWalletData}
+              priceMap={priceMap}
+            />
+            <OrderHistoryPanel
+              openOrders={binanceOpenOrders}
+              tradeHistory={binanceTrades}
+              isLoading={isOrdersLoading}
+              error={ordersError}
+              timezone={timezone}
+            />
+          </>
         )}
 
         <ParametersPanel params={params} onParamsChange={setParams} />
@@ -302,6 +343,7 @@ function App() {
             <CandlestickChart 
               data={candleData}
               signals={signals}
+              myTrades={binanceTrades}
               selectedAsset={selectedAsset}
               timezone={timezone}
               timestamps={timestamps}

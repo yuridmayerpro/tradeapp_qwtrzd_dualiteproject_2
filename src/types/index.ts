@@ -91,3 +91,35 @@ export interface TickerPrice {
   symbol: string;
   price: string;
 }
+
+// --- Tipos para Histórico de Ordens e Trades ---
+export interface BinanceOrder {
+  symbol: string;
+  orderId: number;
+  clientOrderId: string;
+  price: string;
+  origQty: string;
+  executedQty: string;
+  cummulativeQuoteQty: string;
+  status: 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'PENDING_CANCEL' | 'REJECTED' | 'EXPIRED';
+  timeInForce: string;
+  type: 'LIMIT' | 'MARKET' | 'STOP_LOSS' | 'STOP_LOSS_LIMIT' | 'TAKE_PROFIT' | 'TAKE_PROFIT_LIMIT' | 'LIMIT_MAKER';
+  side: 'BUY' | 'SELL';
+  time: number;
+  updateTime: number;
+  isWorking: boolean;
+}
+
+export interface BinanceTrade {
+  symbol: string;
+  id: number;
+  orderId: number;
+  price: string;
+  qty: string;
+  quoteQty: string;
+  commission: string;
+  commissionAsset: string;
+  time: number;
+  isBuyer: boolean;
+  isMaker: boolean;
+}

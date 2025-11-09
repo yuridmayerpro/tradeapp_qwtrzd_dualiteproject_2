@@ -1,11 +1,27 @@
 import axios from 'axios';
-import { Asset, BinanceAsset, CandleData, BinanceAccount, TickerPrice } from '../types';
+import { Asset, BinanceAsset, CandleData, BinanceAccount, TickerPrice, BinanceTrade, BinanceOrder } from '../types';
 import { supabase } from '../lib/supabaseClient';
 
 const BINANCE_API_BASE_URL = 'https://api.binance.com/api/v3';
 
 // --- Funções de conversão de Símbolo ---
 const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('-', '');
+
+// --- Proxy Genérico para a API da Binance via Edge Function ---
+const invokeBinanceProxy = async (path: string, params: Record<string, string> = {}) => {
+  try {
+    const { data, error } = await supabase.functions.invoke('binance-proxy', {
+      body: { path, params }
+    });
+    if (error) throw error;
+    if (data.error) throw new Error(data.error);
+    return data;
+  } catch (error) {
+    console.error(`Erro ao invocar a função de borda para o caminho ${path}:`, error);
+    throw error;
+  }
+};
+
 
 // --- Busca de Ativos Disponíveis ---
 export const fetchAllBinanceAssets = async (): Promise<BinanceAsset[]> => {
@@ -54,12 +70,9 @@ const parseBinanceChartData = (data: any[]): CandleData[] => {
 export const fetchChartData = async (symbol: string): Promise<CandleData[]> => {
   const binanceSymbol = toBinanceSymbol(symbol);
   
-  // AJUSTE: Garante que a busca de dados seja sempre para as últimas 48 horas a partir do momento atual.
   const startTime = Date.now() - 48 * 60 * 60 * 1000; 
 
   try {
-    // Para um intervalo de 15m, 48 horas correspondem a 192 velas (48 * 4).
-    // O limite de 1000 é mais que suficiente para capturar todos os dados necessários.
     const targetUrl = `${BINANCE_API_BASE_URL}/klines?symbol=${binanceSymbol}&interval=15m&startTime=${startTime}&limit=1000`;
     const response = await axios.get(targetUrl);
     return parseBinanceChartData(response.data);
@@ -128,17 +141,18 @@ export const fetchAllTickerPrices = async (): Promise<Map<string, number>> => {
 
 // --- Dados da Carteira Binance (via Edge Function) ---
 export const fetchBinanceAccountData = async (): Promise<BinanceAccount> => {
-  try {
-    // A função de borda usa o token de autenticação do usuário automaticamente
-    const { data, error } = await supabase.functions.invoke('binance-proxy');
+  return invokeBinanceProxy('/api/v3/account');
+};
 
-    if (error) throw error;
-    // A função de borda pode retornar um erro de negócio em `data`
-    if (data.error) throw new Error(data.error);
+// --- Histórico de Trades (via Edge Function) ---
+export const fetchBinanceMyTrades = async (symbol: string): Promise<BinanceTrade[]> => {
+  const binanceSymbol = toBinanceSymbol(symbol);
+  const startTime = (Date.now() - 48 * 60 * 60 * 1000).toString();
+  return invokeBinanceProxy('/api/v3/myTrades', { symbol: binanceSymbol, startTime });
+};
 
-    return data as BinanceAccount;
-  } catch (error) {
-    console.error('Erro ao invocar a função de borda `binance-proxy`:', error);
-    throw error; // Re-lança para que o componente possa tratar o estado de erro
-  }
+// --- Ordens em Aberto (via Edge Function) ---
+export const fetchBinanceOpenOrders = async (symbol: string): Promise<BinanceOrder[]> => {
+  const binanceSymbol = toBinanceSymbol(symbol);
+  return invokeBinanceProxy('/api/v3/openOrders', { symbol: binanceSymbol });
 };
