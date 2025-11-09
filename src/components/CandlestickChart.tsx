@@ -82,10 +82,10 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, signals, sele
         }
       ],
       dataZoom: [
-        { type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 },
+        { type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 },
         {
           show: true, xAxisIndex: [0, 1], type: 'slider', bottom: '8%',
-          start: 0, end: 100, borderColor: '#475569',
+          start: 50, end: 100, borderColor: '#475569',
           fillerColor: 'rgba(71, 85, 105, 0.2)', handleStyle: { color: '#64748b' },
           textStyle: { color: '#94a3b8' }
         }
@@ -154,7 +154,7 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, signals, sele
   return (
     <div className="p-4 pb-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
-        <h2 className="text-xl font-bold text-white">Gráfico de Candlestick - {selectedAsset}</h2>
+        <h2 className="text-xl font-bold text-white">Gráfico de Candlestick - {selectedAsset} <span className="text-base font-medium text-slate-400">(15m)</span></h2>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded"></div><span className="text-sm text-slate-300">Alta</span></div>
           <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500 rounded"></div><span className="text-sm text-slate-300">Baixa</span></div>

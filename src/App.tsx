@@ -10,14 +10,15 @@ import AssetSearchModal from './components/AssetSearchModal';
 import TimezoneSelector from './components/TimezoneSelector';
 import AuthControl from './components/AuthControl';
 import BinanceConnectModal from './components/BinanceConnectModal';
-import { Asset, CandleData, IndicatorParams, Signal, IndicatorData, FullCandleData, BinanceAsset } from './types';
-import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData } from './utils/api';
+import BinanceWalletInfo from './components/BinanceWalletInfo';
+import { Asset, CandleData, IndicatorParams, Signal, IndicatorData, FullCandleData, BinanceAsset, BinanceAccount } from './types';
+import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData, fetchBinanceAccountData, fetchAllTickerPrices } from './utils/api';
 import { generateSignalsAndIndicators } from './utils/technicalIndicators';
 import { LoaderCircle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { supabase } from './lib/supabaseClient';
 
-const FEATURED_ASSETS = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'BNB-USD', 'DOGE-USD', 'TRX-USD', 'USDC-USD'];
+const FEATURED_ASSETS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XRP-USDT', 'BNB-USDT', 'DOGE-USDT', 'ADA-USDT', 'TRX-USDT'];
 const DEFAULT_PARAMS: IndicatorParams = {
   adxPeriod: 14, adxThreshold: 20, slopeWindow: 14, slopeSmooth: 5, gogSpan: 5,
   swingLeft: 3, swingRight: 3, fiboRetrLow: 0.382, fiboRetrHigh: 0.618,
@@ -28,7 +29,8 @@ function App() {
   
   const [tickerAssets, setTickerAssets] = useState<Asset[]>([]);
   const [allBinanceAssets, setAllBinanceAssets] = useState<BinanceAsset[]>([]);
-  const [selectedAsset, setSelectedAsset] = useState<string>('BTC-USD');
+  const [priceMap, setPriceMap] = useState<Map<string, number> | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<string>('BTC-USDT');
   const [selectedAssetData, setSelectedAssetData] = useState<Asset | null>(null);
   const [candleData, setCandleData] = useState<CandleData[]>([]);
   const [fullData, setFullData] = useState<FullCandleData[]>([]);
@@ -41,6 +43,12 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [timezone, setTimezone] = useState<string>('America/Sao_Paulo');
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
+
+  // State for Binance Wallet
+  const [isBinanceConnected, setIsBinanceConnected] = useState(false);
+  const [binanceAccountData, setBinanceAccountData] = useState<BinanceAccount | null>(null);
+  const [isBinanceDataLoading, setIsBinanceDataLoading] = useState(false);
+  const [binanceDataError, setBinanceDataError] = useState<Error | null>(null);
 
   const saveParamsTimeoutRef = useRef<number | null>(null);
 
@@ -65,14 +73,29 @@ function App() {
     setIsLoading(false);
   }, []);
 
+  const loadBinanceWalletData = useCallback(async () => {
+    if (!user) return;
+    setIsBinanceDataLoading(true);
+    setBinanceDataError(null);
+    try {
+      const accountData = await fetchBinanceAccountData();
+      setBinanceAccountData(accountData);
+    } catch (error: any) {
+      setBinanceDataError(error);
+    } finally {
+      setIsBinanceDataLoading(false);
+    }
+  }, [user]);
+
   // Main data loading effect
   useEffect(() => {
     if (authLoading) return;
 
     const performInitialLoad = async () => {
       setIsLoading(true);
-      let assetToLoad = 'BTC-USD';
+      let assetToLoad = 'BTC-USDT';
       let initialParams = { ...DEFAULT_PARAMS };
+      let binanceConnected = false;
 
       if (user) {
         const { data, error } = await supabase
@@ -84,6 +107,9 @@ function App() {
         if (data) {
           assetToLoad = data.selected_asset || assetToLoad;
           initialParams = data.indicator_params || initialParams;
+          if (data.binance_api_key) {
+            binanceConnected = true;
+          }
         } else if (error && error.code !== 'PGRST116') {
           console.error('Error fetching user settings:', error);
         }
@@ -91,20 +117,29 @@ function App() {
       
       setSelectedAsset(assetToLoad);
       setParams(initialParams);
+      setIsBinanceConnected(binanceConnected);
 
-      const assets = await fetchAllBinanceAssets();
+      const [assets, prices] = await Promise.all([
+        fetchAllBinanceAssets(),
+        fetchAllTickerPrices()
+      ]);
       setAllBinanceAssets(assets);
+      setPriceMap(prices);
       
       await Promise.all([
         updateTickerData(),
         loadAssetData(assetToLoad)
       ]);
 
+      if (binanceConnected) {
+        loadBinanceWalletData();
+      }
+
       setIsInitialDataLoaded(true);
     };
 
     performInitialLoad();
-  }, [user, authLoading, loadAssetData, updateTickerData]);
+  }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData]);
 
 
   // Interval updates
@@ -187,6 +222,12 @@ function App() {
     }
   };
 
+  const handleBinanceConnectSuccess = () => {
+    setIsBinanceConnected(true);
+    loadBinanceWalletData();
+    setIsBinanceModalOpen(false);
+  };
+
   const adxHistory = fullData.map(d => d.adx);
   const gogHistory = fullData.map(d => d.gog);
   const slopeHistory = fullData.map(d => d.slope);
@@ -240,6 +281,18 @@ function App() {
           <BinanceConnectModal
             isOpen={isBinanceModalOpen}
             onClose={() => setIsBinanceModalOpen(false)}
+            onConnectSuccess={handleBinanceConnectSuccess}
+          />
+        )}
+        
+        {isBinanceConnected && (
+          <BinanceWalletInfo
+            accountData={binanceAccountData}
+            isLoading={isBinanceDataLoading}
+            error={binanceDataError}
+            selectedAssetSymbol={selectedAsset}
+            onRetry={loadBinanceWalletData}
+            priceMap={priceMap}
           />
         )}
 

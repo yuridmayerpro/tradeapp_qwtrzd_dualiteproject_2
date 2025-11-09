@@ -6,9 +6,10 @@ import { X, KeyRound, Shield, LoaderCircle, CheckCircle, AlertTriangle, External
 interface BinanceConnectModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onConnectSuccess: () => void;
 }
 
-const BinanceConnectModal: React.FC<BinanceConnectModalProps> = ({ isOpen, onClose }) => {
+const BinanceConnectModal: React.FC<BinanceConnectModalProps> = ({ isOpen, onClose, onConnectSuccess }) => {
   const { user } = useAuth();
   const [apiKey, setApiKey] = useState('');
   const [secretKey, setSecretKey] = useState('');
@@ -78,7 +79,8 @@ const BinanceConnectModal: React.FC<BinanceConnectModalProps> = ({ isOpen, onClo
       setSuccess('Conta Binance conectada com sucesso!');
       setApiKey('');
       setSecretKey('');
-      fetchConnectionStatus();
+      await fetchConnectionStatus();
+      onConnectSuccess(); // Notifica o App para buscar os dados da carteira
     } catch (err: any) {
       setError('Falha ao salvar as chaves. Verifique o console para mais detalhes.');
       console.error(err);
@@ -106,6 +108,7 @@ const BinanceConnectModal: React.FC<BinanceConnectModalProps> = ({ isOpen, onClo
       
       setSuccess('Conta desconectada com sucesso.');
       setIsConnected(false);
+      // Idealmente, notificar o App para limpar os dados da carteira
     } catch (err: any) {
       setError('Falha ao desconectar a conta.');
       console.error(err);

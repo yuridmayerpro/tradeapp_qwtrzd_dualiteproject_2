@@ -1,36 +1,25 @@
 import axios from 'axios';
-import { Asset, BinanceAsset, CandleData } from '../types';
+import { Asset, BinanceAsset, CandleData, BinanceAccount, TickerPrice } from '../types';
+import { supabase } from '../lib/supabaseClient';
 
 const BINANCE_API_BASE_URL = 'https://api.binance.com/api/v3';
 
-// Mapeamento para nomes amigáveis. Pode ser expandido ou substituído no futuro.
-const SYMBOL_TO_NAME_MAP: { [key: string]: string } = {
-  'BTC-USD': 'Bitcoin',
-  'ETH-USD': 'Ethereum',
-  'SOL-USD': 'Solana',
-  'XRP-USD': 'XRP',
-  'BNB-USD': 'BNB',
-  'DOGE-USD': 'Dogecoin',
-  'TRX-USD': 'TRON',
-  'USDC-USD': 'USD Coin',
-  'USDT-USD': 'Tether',
-};
-
 // --- Funções de conversão de Símbolo ---
-const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('-USD', 'USDT');
-const fromBinanceSymbol = (binanceSymbol: string): string => binanceSymbol.replace(/USDT$/, '-USD');
+const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('-', '');
 
 // --- Busca de Ativos Disponíveis ---
 export const fetchAllBinanceAssets = async (): Promise<BinanceAsset[]> => {
   try {
     const { data } = await axios.get(`${BINANCE_API_BASE_URL}/exchangeInfo`);
     if (data && data.symbols) {
+      const STABLECOINS = ['USDT', 'USDC', 'BUSD', 'TUSD', 'FDUSD', 'DAI'];
       return data.symbols
-        .filter((s: any) => s.status === 'TRADING' && s.quoteAsset === 'USDT' && !s.symbol.includes('_'))
+        .filter((s: any) => s.status === 'TRADING' && STABLECOINS.includes(s.quoteAsset) && !s.symbol.includes('_'))
         .map((s: any): BinanceAsset => ({
           symbol: s.symbol,
           baseAsset: s.baseAsset,
-          appSymbol: fromBinanceSymbol(s.symbol),
+          quoteAsset: s.quoteAsset,
+          appSymbol: `${s.baseAsset}-${s.quoteAsset}`,
         }));
     }
     return [];
@@ -63,16 +52,15 @@ const parseBinanceChartData = (data: any[]): CandleData[] => {
 
 
 export const fetchChartData = async (symbol: string): Promise<CandleData[]> => {
-  if (symbol === 'USDT-USD') {
-    console.warn("Não é possível buscar dados do gráfico para USDT-USD.");
-    return [];
-  }
-  
   const binanceSymbol = toBinanceSymbol(symbol);
-  const startTime = new Date().setUTCHours(0, 0, 0, 0);
+  
+  // AJUSTE: Garante que a busca de dados seja sempre para as últimas 48 horas a partir do momento atual.
+  const startTime = Date.now() - 48 * 60 * 60 * 1000; 
 
   try {
-    const targetUrl = `${BINANCE_API_BASE_URL}/klines?symbol=${binanceSymbol}&interval=5m&startTime=${startTime}&limit=1000`;
+    // Para um intervalo de 15m, 48 horas correspondem a 192 velas (48 * 4).
+    // O limite de 1000 é mais que suficiente para capturar todos os dados necessários.
+    const targetUrl = `${BINANCE_API_BASE_URL}/klines?symbol=${binanceSymbol}&interval=15m&startTime=${startTime}&limit=1000`;
     const response = await axios.get(targetUrl);
     return parseBinanceChartData(response.data);
   } catch (error) {
@@ -86,6 +74,7 @@ export const fetchBinanceTickerData = async (appSymbols: string[]): Promise<Asse
   if (appSymbols.length === 0) return [];
   
   const binanceSymbols = appSymbols.map(toBinanceSymbol);
+  const appSymbolMap = new Map(appSymbols.map(s => [toBinanceSymbol(s), s]));
   
   const endpoint = appSymbols.length === 1 
     ? `${BINANCE_API_BASE_URL}/ticker/24hr?symbol=${binanceSymbols[0]}`
@@ -96,14 +85,14 @@ export const fetchBinanceTickerData = async (appSymbols: string[]): Promise<Asse
     const responseData = Array.isArray(data) ? data : [data];
 
     return responseData.map((ticker: any): Asset => {
-      const appSymbol = fromBinanceSymbol(ticker.symbol);
+      const appSymbol = appSymbolMap.get(ticker.symbol) || `${ticker.symbol}-UNKNOWN`;
       const price = parseFloat(ticker.lastPrice);
       const changePercent = parseFloat(ticker.priceChangePercent);
       const change = parseFloat(ticker.priceChange);
 
       return {
         symbol: appSymbol,
-        name: SYMBOL_TO_NAME_MAP[appSymbol] || appSymbol.split('-')[0], // Fallback para o nome base
+        name: appSymbol.split('-')[0], // Usa o base asset como nome
         price: isNaN(price) ? 0 : price,
         change: isNaN(change) ? 0 : change,
         changePercent: isNaN(changePercent) ? 0 : changePercent,
@@ -113,10 +102,43 @@ export const fetchBinanceTickerData = async (appSymbols: string[]): Promise<Asse
     console.error('Erro ao buscar dados do ticker da Binance:', error);
     return appSymbols.map(symbol => ({
         symbol,
-        name: SYMBOL_TO_NAME_MAP[symbol] || symbol.split('-')[0],
+        name: symbol.split('-')[0],
         price: 0,
         change: 0,
         changePercent: 0,
     }));
+  }
+};
+
+// --- Preços de todos os Tickers ---
+export const fetchAllTickerPrices = async (): Promise<Map<string, number>> => {
+  try {
+    const { data } = await axios.get<TickerPrice[]>(`${BINANCE_API_BASE_URL}/ticker/price`);
+    const priceMap = new Map<string, number>();
+    data.forEach(ticker => {
+      priceMap.set(ticker.symbol, parseFloat(ticker.price));
+    });
+    return priceMap;
+  } catch (error) {
+    console.error('Erro ao buscar todos os preços de tickers:', error);
+    return new Map();
+  }
+};
+
+
+// --- Dados da Carteira Binance (via Edge Function) ---
+export const fetchBinanceAccountData = async (): Promise<BinanceAccount> => {
+  try {
+    // A função de borda usa o token de autenticação do usuário automaticamente
+    const { data, error } = await supabase.functions.invoke('binance-proxy');
+
+    if (error) throw error;
+    // A função de borda pode retornar um erro de negócio em `data`
+    if (data.error) throw new Error(data.error);
+
+    return data as BinanceAccount;
+  } catch (error) {
+    console.error('Erro ao invocar a função de borda `binance-proxy`:', error);
+    throw error; // Re-lança para que o componente possa tratar o estado de erro
   }
 };
