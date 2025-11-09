@@ -58,7 +58,8 @@ serve(async (req: Request) => {
     const { binance_api_key: apiKey, binance_secret_key: secretKey } = settings;
 
     const timestamp = Date.now();
-    const recvWindow = 5000;
+    // AJUSTE: Aumenta a janela de tempo para o máximo (60s) para evitar erros de timestamp.
+    const recvWindow = 60000; 
     
     const fullParams = { ...params, timestamp: timestamp.toString(), recvWindow: recvWindow.toString() };
     const queryString = new URLSearchParams(fullParams).toString();
@@ -76,6 +77,7 @@ serve(async (req: Request) => {
     const responseBody = await binanceResponse.json();
 
     if (!binanceResponse.ok) {
+      // Fornece uma mensagem de erro mais detalhada, incluindo o código de erro da Binance.
       throw new Error(`Erro da API Binance: ${responseBody.msg || 'Verifique suas chaves e permissões.'} (Code: ${responseBody.code})`);
     }
 
@@ -86,6 +88,7 @@ serve(async (req: Request) => {
 
   } catch (error) {
     console.error('Error in binance-proxy function:', error);
+    // Garante que a mensagem de erro seja propagada para o frontend.
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

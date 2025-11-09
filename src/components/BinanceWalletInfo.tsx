@@ -37,7 +37,8 @@ const BinanceWalletInfo: React.FC<BinanceWalletInfoProps> = ({
   onRetry,
   priceMap,
 }) => {
-  const selectedAssetBase = selectedAssetSymbol.split('-')[0];
+  // AJUSTE: A extração do ativo base agora usa '/' como separador.
+  const selectedAssetBase = selectedAssetSymbol.split('/')[0];
 
   const { selectedAssetBalance, topBalances, totalWalletValue } = useMemo(() => {
     if (!accountData || !priceMap) {

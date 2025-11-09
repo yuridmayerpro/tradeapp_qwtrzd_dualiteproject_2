@@ -1,5 +1,5 @@
 export interface Asset {
-  symbol: string; // Format: BTC-USDT
+  symbol: string; // Format: BTC/USDT
   name: string;
   price: number;
   change: number;
@@ -11,7 +11,7 @@ export interface BinanceAsset {
   symbol: string; // Format: BTCUSDT
   baseAsset: string; // Format: BTC
   quoteAsset: string; // Format: USDT
-  appSymbol: string; // Format: BTC-USDT
+  appSymbol: string; // Format: BTC/USDT
 }
 
 export interface CandleData {

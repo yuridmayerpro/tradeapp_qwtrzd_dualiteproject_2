@@ -10,7 +10,8 @@ interface CurrentAssetBarProps {
 const CurrentAssetBar: React.FC<CurrentAssetBarProps> = ({ assetData, onOpenModal }) => {
   const getIconUrl = (symbol: string) => {
     if (!symbol) return 'https://i.ibb.co/mJRc3Q4/generic-crypto.png';
-    const base = symbol.split('-')[0].toLowerCase();
+    // AJUSTE: A extração do ativo base agora usa '/' como separador.
+    const base = symbol.split('/')[0].toLowerCase();
     return `https://assets.coincap.io/assets/icons/${base}@2x.png`;
   };
 

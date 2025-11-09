@@ -6,35 +6,25 @@ import { CandleData, IndicatorParams, Signal, FullCandleData } from '../types';
 
 /**
  * Calcula a Média Móvel Exponencial (EMA) de uma série.
- * Comportamento similar ao pandas.ewm(span=period, adjust=False, min_periods=period).
+ * Comportamento similar ao pandas.ewm(span=period, adjust=False).
  */
 const ema = (series: number[], period: number): number[] => {
     const result: number[] = Array(series.length).fill(NaN);
-    if (series.length < period) return result;
+    if (series.length === 0) return result;
 
     const alpha = 2 / (period + 1);
-    let firstSmaIndex = -1;
+    let firstValidIndex = series.findIndex(v => !isNaN(v));
 
-    // Encontra a primeira janela de `period` números válidos para calcular o SMA inicial
-    for (let i = period - 1; i < series.length; i++) {
-        const window = series.slice(i - period + 1, i + 1);
-        if (window.every(v => !isNaN(v))) {
-            const sum = window.reduce((a, b) => a + b, 0);
-            result[i] = sum / period;
-            firstSmaIndex = i;
-            break;
-        }
-    }
+    if (firstValidIndex === -1) return result; // Retorna array de NaNs se não houver dados válidos
 
-    if (firstSmaIndex === -1) return result;
+    result[firstValidIndex] = series[firstValidIndex];
 
-    // Calcula o restante do EMA recursivamente
-    for (let i = firstSmaIndex + 1; i < series.length; i++) {
+    for (let i = firstValidIndex + 1; i < series.length; i++) {
         const currentValue = series[i];
         const prevEma = result[i - 1];
-        
+
         if (isNaN(currentValue)) {
-            result[i] = prevEma; // Carrega o último EMA válido
+            result[i] = prevEma;
         } else {
             result[i] = alpha * currentValue + (1 - alpha) * prevEma;
         }
@@ -42,42 +32,29 @@ const ema = (series: number[], period: number): number[] => {
     return result;
 };
 
+
 /**
  * Calcula a Média Móvel de Wilder (Wilder's Smoothing).
  * Equivalente a um EMA com alpha = 1 / period.
  */
 const wilderEma = (series: number[], period: number): number[] => {
     const result: number[] = Array(series.length).fill(NaN);
-    if (series.length < period) return result;
+    if (series.length === 0) return result;
 
-    let firstSmaIndex = -1;
+    let firstValidIndex = series.findIndex(v => !isNaN(v));
 
-    // Encontra a primeira janela de `period` números válidos
-    for (let i = period - 1; i < series.length; i++) {
-        const window = series.slice(i - period + 1, i + 1);
-        if (window.every(v => !isNaN(v))) {
-            const sum = window.reduce((a, b) => a + b, 0);
-            result[i] = sum / period;
-            firstSmaIndex = i;
-            break;
-        }
-    }
+    if (firstValidIndex === -1) return result; // Retorna array de NaNs se não houver dados válidos
 
-    if (firstSmaIndex === -1) return result;
+    result[firstValidIndex] = series[firstValidIndex];
 
-    // Calcula o restante usando a suavização de Wilder
-    for (let i = firstSmaIndex + 1; i < series.length; i++) {
+    for (let i = firstValidIndex + 1; i < series.length; i++) {
         const currentValue = series[i];
         const prevEma = result[i - 1];
 
         if (isNaN(currentValue)) {
             result[i] = prevEma;
         } else {
-            if (isNaN(prevEma)) {
-                 result[i] = currentValue;
-            } else {
-                result[i] = (prevEma * (period - 1) + currentValue) / period;
-            }
+            result[i] = (prevEma * (period - 1) + currentValue) / period;
         }
     }
     return result;

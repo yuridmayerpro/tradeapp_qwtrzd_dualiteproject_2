@@ -13,13 +13,13 @@ import BinanceConnectModal from './components/BinanceConnectModal';
 import BinanceWalletInfo from './components/BinanceWalletInfo';
 import OrderHistoryPanel from './components/OrderHistoryPanel';
 import { Asset, CandleData, IndicatorParams, Signal, IndicatorData, FullCandleData, BinanceAsset, BinanceAccount, BinanceTrade, BinanceOrder } from './types';
-import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData, fetchBinanceAccountData, fetchAllTickerPrices, fetchBinanceMyTrades, fetchBinanceOpenOrders } from './utils/api';
+import { fetchChartData, fetchAllBinanceAssets, fetchBinanceTickerData, fetchBinanceAccountData, fetchAllTickerPrices, fetchBinanceMyTrades, fetchBinanceOpenOrders, fetchBinanceAllOrders } from './utils/api';
 import { generateSignalsAndIndicators } from './utils/technicalIndicators';
 import { LoaderCircle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { supabase } from './lib/supabaseClient';
 
-const FEATURED_ASSETS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XRP-USDT', 'BNB-USDT', 'DOGE-USDT', 'ADA-USDT', 'TRX-USDT'];
+const FEATURED_ASSETS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'BNB/USDT', 'DOGE/USDT', 'ADA/USDT', 'TRX/USDT'];
 const DEFAULT_PARAMS: IndicatorParams = {
   adxPeriod: 14, adxThreshold: 20, slopeWindow: 14, slopeSmooth: 5, gogSpan: 5,
   swingLeft: 3, swingRight: 3, fiboRetrLow: 0.382, fiboRetrHigh: 0.618,
@@ -31,7 +31,7 @@ function App() {
   const [tickerAssets, setTickerAssets] = useState<Asset[]>([]);
   const [allBinanceAssets, setAllBinanceAssets] = useState<BinanceAsset[]>([]);
   const [priceMap, setPriceMap] = useState<Map<string, number> | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState<string>('BTC-USDT');
+  const [selectedAsset, setSelectedAsset] = useState<string>('BTC/USDT');
   const [selectedAssetData, setSelectedAssetData] = useState<Asset | null>(null);
   const [candleData, setCandleData] = useState<CandleData[]>([]);
   const [fullData, setFullData] = useState<FullCandleData[]>([]);
@@ -53,6 +53,7 @@ function App() {
   
   const [binanceTrades, setBinanceTrades] = useState<BinanceTrade[]>([]);
   const [binanceOpenOrders, setBinanceOpenOrders] = useState<BinanceOrder[]>([]);
+  const [binanceAllOrders, setBinanceAllOrders] = useState<BinanceOrder[]>([]);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<Error | null>(null);
 
@@ -79,31 +80,71 @@ function App() {
     setIsLoading(false);
   }, []);
 
-  const loadBinanceWalletData = useCallback(async () => {
-    if (!user || !isBinanceConnected) return;
+  // AJUSTE: A função de carregar dados da carteira agora retorna os dados para encadear ações.
+  const loadBinanceWalletData = useCallback(async (): Promise<BinanceAccount | null> => {
+    if (!user || !isBinanceConnected) return null;
     setIsBinanceDataLoading(true);
     setBinanceDataError(null);
     try {
       const accountData = await fetchBinanceAccountData();
       setBinanceAccountData(accountData);
+      return accountData;
     } catch (error: any) {
       setBinanceDataError(error);
+      return null;
     } finally {
       setIsBinanceDataLoading(false);
     }
   }, [user, isBinanceConnected]);
 
-  const loadBinanceHistory = useCallback(async (assetSymbol: string) => {
+  // AJUSTE: Nova função para buscar o histórico de TODOS os ativos relevantes, não apenas o selecionado.
+  const loadFullBinanceHistory = useCallback(async (account: BinanceAccount, allAssets: BinanceAsset[]) => {
     if (!user || !isBinanceConnected) return;
+
     setIsOrdersLoading(true);
     setOrdersError(null);
+    
     try {
-      const [trades, openOrders] = await Promise.all([
-        fetchBinanceMyTrades(assetSymbol),
-        fetchBinanceOpenOrders(assetSymbol),
-      ]);
-      setBinanceTrades(trades);
+      // Busca ordens abertas (que já retorna todos os símbolos)
+      const openOrders = await fetchBinanceOpenOrders();
       setBinanceOpenOrders(openOrders);
+
+      // Identifica os ativos que o usuário possui saldo
+      const ownedBaseAssets = new Set(
+        account.balances
+          .filter(b => parseFloat(b.free) + parseFloat(b.locked) > 0)
+          .map(b => b.asset)
+      );
+
+      // Encontra todos os pares de negociação para os ativos possuídos
+      const symbolsToFetch = allAssets
+        .filter(asset => ownedBaseAssets.has(asset.baseAsset))
+        .map(asset => asset.appSymbol);
+
+      let aggregatedTrades: BinanceTrade[] = [];
+      let aggregatedAllOrders: BinanceOrder[] = [];
+
+      // Itera sequencialmente para evitar limites da API
+      for (const symbol of symbolsToFetch) {
+        try {
+          const [trades, allOrders] = await Promise.all([
+            fetchBinanceMyTrades(symbol),
+            fetchBinanceAllOrders(symbol),
+          ]);
+          aggregatedTrades.push(...trades);
+          aggregatedAllOrders.push(...allOrders);
+        } catch (e) {
+          console.warn(`Não foi possível buscar o histórico para ${symbol}:`, e);
+        }
+      }
+      
+      // Ordena os resultados agregados por data
+      aggregatedTrades.sort((a, b) => b.time - a.time);
+      aggregatedAllOrders.sort((a, b) => b.time - a.time);
+
+      setBinanceTrades(aggregatedTrades);
+      setBinanceAllOrders(aggregatedAllOrders);
+
     } catch (error: any) {
       setOrdersError(error);
     } finally {
@@ -117,21 +158,21 @@ function App() {
 
     const performInitialLoad = async () => {
       setIsLoading(true);
-      let assetToLoad = 'BTC-USDT';
+      let assetToLoad = 'BTC/USDT';
       let initialParams = { ...DEFAULT_PARAMS };
       let binanceConnected = false;
 
       if (user) {
         const { data, error } = await supabase
           .from('user_settings')
-          .select('binance_api_key, selected_asset, indicator_params')
+          .select('binance_api_key, binance_secret_key, selected_asset, indicator_params')
           .eq('id', user.id)
           .single();
         
         if (data) {
           assetToLoad = data.selected_asset || assetToLoad;
           initialParams = data.indicator_params || initialParams;
-          if (data.binance_api_key) {
+          if (data.binance_api_key && data.binance_secret_key) {
             binanceConnected = true;
           }
         } else if (error && error.code !== 'PGRST116') {
@@ -153,18 +194,19 @@ function App() {
       await loadAssetData(assetToLoad);
       await updateTickerData();
 
+      // AJUSTE: O histórico completo agora é carregado após os dados da carteira.
       if (binanceConnected) {
-        await Promise.all([
-            loadBinanceWalletData(),
-            loadBinanceHistory(assetToLoad)
-        ]);
+        const accountData = await loadBinanceWalletData();
+        if (accountData) {
+          await loadFullBinanceHistory(accountData, assets);
+        }
       }
 
       setIsInitialDataLoaded(true);
     };
 
     performInitialLoad();
-  }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData, loadBinanceHistory]);
+  }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData, loadFullBinanceHistory]);
 
 
   // Interval updates
@@ -235,9 +277,7 @@ function App() {
     setIsAssetModalOpen(false);
     
     await loadAssetData(symbol);
-    if (isBinanceConnected) {
-        await loadBinanceHistory(symbol);
-    }
+    // AJUSTE: A busca de histórico foi removida daqui, pois agora é independente.
 
     if (user) {
       const { error } = await supabase
@@ -254,10 +294,11 @@ function App() {
   const handleBinanceConnectSuccess = async () => {
     setIsBinanceConnected(true);
     setIsBinanceModalOpen(false);
-    await Promise.all([
-        loadBinanceWalletData(),
-        loadBinanceHistory(selectedAsset)
-    ]);
+    // AJUSTE: Carrega o histórico completo após conectar e obter os dados da carteira.
+    const accountData = await loadBinanceWalletData();
+    if (accountData && allBinanceAssets.length > 0) {
+      await loadFullBinanceHistory(accountData, allBinanceAssets);
+    }
   };
 
   const adxHistory = fullData.map(d => d.adx);
@@ -324,11 +365,17 @@ function App() {
               isLoading={isBinanceDataLoading}
               error={binanceDataError}
               selectedAssetSymbol={selectedAsset}
-              onRetry={loadBinanceWalletData}
+              onRetry={async () => {
+                const accountData = await loadBinanceWalletData();
+                if (accountData && allBinanceAssets.length > 0) {
+                  await loadFullBinanceHistory(accountData, allBinanceAssets);
+                }
+              }}
               priceMap={priceMap}
             />
             <OrderHistoryPanel
               openOrders={binanceOpenOrders}
+              allOrders={binanceAllOrders}
               tradeHistory={binanceTrades}
               isLoading={isOrdersLoading}
               error={ordersError}
@@ -343,7 +390,7 @@ function App() {
             <CandlestickChart 
               data={candleData}
               signals={signals}
-              myTrades={binanceTrades}
+              myTrades={binanceTrades.filter(t => t.symbol === toBinanceSymbol(selectedAsset))}
               selectedAsset={selectedAsset}
               timezone={timezone}
               timestamps={timestamps}
@@ -363,5 +410,8 @@ function App() {
     </div>
   );
 }
+
+// Helper para converter o formato do app para o da Binance API
+const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('/', '');
 
 export default App;

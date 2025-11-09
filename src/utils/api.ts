@@ -5,7 +5,8 @@ import { supabase } from '../lib/supabaseClient';
 const BINANCE_API_BASE_URL = 'https://api.binance.com/api/v3';
 
 // --- Funções de conversão de Símbolo ---
-const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('-', '');
+// AJUSTE: Modificado para usar '/' como separador, alinhando com a UI da Binance.
+const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('/', '');
 
 // --- Proxy Genérico para a API da Binance via Edge Function ---
 const invokeBinanceProxy = async (path: string, params: Record<string, string> = {}) => {
@@ -13,11 +14,14 @@ const invokeBinanceProxy = async (path: string, params: Record<string, string> =
     const { data, error } = await supabase.functions.invoke('binance-proxy', {
       body: { path, params }
     });
+    // Se a função de borda retornar um erro estruturado, lance-o.
     if (error) throw error;
     if (data.error) throw new Error(data.error);
     return data;
   } catch (error) {
     console.error(`Erro ao invocar a função de borda para o caminho ${path}:`, error);
+    // Relança o erro para que a função chamadora possa tratá-lo.
+    // Isso é crucial para exibir mensagens de erro na UI.
     throw error;
   }
 };
@@ -35,7 +39,8 @@ export const fetchAllBinanceAssets = async (): Promise<BinanceAsset[]> => {
           symbol: s.symbol,
           baseAsset: s.baseAsset,
           quoteAsset: s.quoteAsset,
-          appSymbol: `${s.baseAsset}-${s.quoteAsset}`,
+          // AJUSTE: O símbolo interno agora usa '/', espelhando a UI da Binance, conforme a sugestão do usuário.
+          appSymbol: `${s.baseAsset}/${s.quoteAsset}`,
         }));
     }
     return [];
@@ -98,14 +103,15 @@ export const fetchBinanceTickerData = async (appSymbols: string[]): Promise<Asse
     const responseData = Array.isArray(data) ? data : [data];
 
     return responseData.map((ticker: any): Asset => {
-      const appSymbol = appSymbolMap.get(ticker.symbol) || `${ticker.symbol}-UNKNOWN`;
+      const appSymbol = appSymbolMap.get(ticker.symbol) || `${ticker.symbol}/UNKNOWN`;
       const price = parseFloat(ticker.lastPrice);
       const changePercent = parseFloat(ticker.priceChangePercent);
       const change = parseFloat(ticker.priceChange);
 
       return {
         symbol: appSymbol,
-        name: appSymbol.split('-')[0], // Usa o base asset como nome
+        // AJUSTE: A extração do nome agora usa '/' como separador.
+        name: appSymbol.split('/')[0], // Usa o base asset como nome
         price: isNaN(price) ? 0 : price,
         change: isNaN(change) ? 0 : change,
         changePercent: isNaN(changePercent) ? 0 : changePercent,
@@ -115,7 +121,8 @@ export const fetchBinanceTickerData = async (appSymbols: string[]): Promise<Asse
     console.error('Erro ao buscar dados do ticker da Binance:', error);
     return appSymbols.map(symbol => ({
         symbol,
-        name: symbol.split('-')[0],
+        // AJUSTE: A extração do nome agora usa '/' como separador.
+        name: symbol.split('/')[0],
         price: 0,
         change: 0,
         changePercent: 0,
@@ -141,18 +148,34 @@ export const fetchAllTickerPrices = async (): Promise<Map<string, number>> => {
 
 // --- Dados da Carteira Binance (via Edge Function) ---
 export const fetchBinanceAccountData = async (): Promise<BinanceAccount> => {
+  // A função invokeBinanceProxy já lança um erro em caso de falha.
+  // O componente chamador (App.tsx) é responsável por tratar esse erro.
   return invokeBinanceProxy('/api/v3/account');
 };
 
 // --- Histórico de Trades (via Edge Function) ---
 export const fetchBinanceMyTrades = async (symbol: string): Promise<BinanceTrade[]> => {
   const binanceSymbol = toBinanceSymbol(symbol);
-  const startTime = (Date.now() - 48 * 60 * 60 * 1000).toString();
-  return invokeBinanceProxy('/api/v3/myTrades', { symbol: binanceSymbol, startTime });
+  const startTime = (Date.now() - 7 * 24 * 60 * 60 * 1000).toString();
+  // Adiciona o limite máximo para garantir que todos os dados sejam buscados
+  const result = await invokeBinanceProxy('/api/v3/myTrades', { symbol: binanceSymbol, startTime, limit: '1000' });
+  
+  return Array.isArray(result) ? result : [];
 };
 
 // --- Ordens em Aberto (via Edge Function) ---
-export const fetchBinanceOpenOrders = async (symbol: string): Promise<BinanceOrder[]> => {
+export const fetchBinanceOpenOrders = async (): Promise<BinanceOrder[]> => {
+  // Este endpoint busca todas as ordens em aberto, por isso não precisa de 'symbol'
+  const result = await invokeBinanceProxy('/api/v3/openOrders');
+  return Array.isArray(result) ? result : [];
+};
+
+// --- Histórico de Todas as Ordens (via Edge Function) ---
+export const fetchBinanceAllOrders = async (symbol: string): Promise<BinanceOrder[]> => {
   const binanceSymbol = toBinanceSymbol(symbol);
-  return invokeBinanceProxy('/api/v3/openOrders', { symbol: binanceSymbol });
+  const startTime = (Date.now() - 7 * 24 * 60 * 60 * 1000).toString();
+  // Adiciona o limite máximo para garantir que todos os dados sejam buscados
+  const result = await invokeBinanceProxy('/api/v3/allOrders', { symbol: binanceSymbol, startTime, limit: '1000' });
+
+  return Array.isArray(result) ? result : [];
 };

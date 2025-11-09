@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { BinanceOrder, BinanceTrade } from '../types';
-import { History, ShoppingCart, ArrowRight, LoaderCircle, AlertTriangle, Info } from 'lucide-react';
+import { History, ShoppingCart, ListOrdered, LoaderCircle, AlertTriangle, Info } from 'lucide-react';
 
 interface OrderHistoryPanelProps {
   openOrders: BinanceOrder[];
+  allOrders: BinanceOrder[];
   tradeHistory: BinanceTrade[];
   isLoading: boolean;
   error: Error | null;
@@ -11,7 +12,7 @@ interface OrderHistoryPanelProps {
 }
 
 const OrderStatusBadge: React.FC<{ status: BinanceOrder['status'] }> = ({ status }) => {
-  const statusMap = {
+  const statusMap: { [key in BinanceOrder['status']]?: string } = {
     NEW: 'bg-blue-500/20 text-blue-300',
     PARTIALLY_FILLED: 'bg-yellow-500/20 text-yellow-300',
     FILLED: 'bg-green-500/20 text-green-300',
@@ -27,8 +28,8 @@ const OrderStatusBadge: React.FC<{ status: BinanceOrder['status'] }> = ({ status
   );
 };
 
-const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, tradeHistory, isLoading, error, timezone }) => {
-  const [activeTab, setActiveTab] = useState<'open' | 'history'>('open');
+const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, allOrders, tradeHistory, isLoading, error, timezone }) => {
+  const [activeTab, setActiveTab] = useState<'open' | 'all' | 'trades'>('open');
 
   const renderLoading = () => (
     <div className="p-6 text-center">
@@ -41,7 +42,7 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
     <div className="p-6 text-center">
       <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-4" />
       <p className="text-red-300 font-semibold mb-2">Falha ao buscar atividades</p>
-      <p className="text-sm text-slate-400">{error?.message || 'Ocorreu um erro desconhecido.'}</p>
+      <p className="text-sm text-slate-400 max-w-md mx-auto">{error?.message || 'Ocorreu um erro desconhecido. Verifique suas chaves de API e permissões na Binance.'}</p>
     </div>
   );
   
@@ -50,7 +51,8 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
       {openOrders.length === 0 ? (
         <div className="text-center py-10">
           <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-          <p className="text-slate-400">Nenhuma ordem em aberto para este ativo.</p>
+          <p className="text-slate-400">Nenhuma ordem Spot em aberto encontrada.</p>
+          <p className="text-sm text-slate-500 mt-1">(Buscando em todos os ativos)</p>
         </div>
       ) : (
         openOrders.map(order => (
@@ -88,12 +90,59 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
     </div>
   );
 
+  const renderAllOrdersHistory = () => (
+    <div className="space-y-3">
+      {allOrders.length === 0 ? (
+        <div className="text-center py-10">
+          <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
+          {/* AJUSTE: Mensagem genérica, pois agora busca em todos os ativos. */}
+          <p className="text-slate-400">Nenhum histórico de ordens Spot encontrado em seus ativos.</p>
+          <p className="text-sm text-slate-500 mt-1">(Buscando nos últimos 7 dias)</p>
+        </div>
+      ) : (
+        allOrders.map(order => (
+          <div key={order.orderId} className="bg-slate-800/70 p-4 rounded-lg border border-slate-700">
+            <div className="flex justify-between items-start mb-3">
+              <div className="flex items-center gap-2">
+                <span className={`font-bold text-lg ${order.side === 'BUY' ? 'text-green-400' : 'text-red-400'}`}>
+                  {order.side}
+                </span>
+                <span className="text-white font-semibold">{order.symbol}</span>
+              </div>
+              <OrderStatusBadge status={order.status} />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <p className="text-slate-400 text-xs">Preço</p>
+                <p className="font-mono text-white">${parseFloat(order.price).toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs">Quantidade</p>
+                <p className="font-mono text-white">{parseFloat(order.origQty)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs">Valor Total</p>
+                <p className="font-mono text-white">${parseFloat(order.cummulativeQuoteQty).toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-xs">Data</p>
+                <p className="text-white">{new Date(order.time).toLocaleString('pt-BR', { timeZone: timezone, dateStyle: 'short', timeStyle: 'short' })}</p>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
   const renderTradeHistory = () => (
      <div className="space-y-3">
       {tradeHistory.length === 0 ? (
         <div className="text-center py-10">
           <Info className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-          <p className="text-slate-400">Nenhum trade executado nas últimas 48h para este ativo.</p>
+          {/* AJUSTE: Mensagem genérica. */}
+          <p className="text-slate-400">Nenhum trade Spot executado encontrado em seus ativos.</p>
+          <p className="text-sm text-slate-500 mt-1">(Buscando nos últimos 7 dias)</p>
         </div>
       ) : (
         tradeHistory.map(trade => (
@@ -132,7 +181,7 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
   );
 
   return (
-    <details className="bg-slate-800/50 rounded-xl border border-slate-700 open:pb-6 transition-all group">
+    <details className="bg-slate-800/50 rounded-xl border border-slate-700 open:pb-6 transition-all group" open>
       <summary className="p-6 cursor-pointer flex items-center justify-between list-none">
         <div className="flex items-center gap-2">
           <History className="w-5 h-5 text-orange-400" />
@@ -140,7 +189,7 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
         </div>
         <div className="flex items-center gap-2">
           {isLoading && <LoaderCircle className="w-5 h-5 text-slate-400 animate-spin" />}
-          <span className="text-sm text-slate-400 hidden md:block">Ordens e Trades (48h)</span>
+          <span className="text-sm text-slate-400 hidden md:block">Ordens e Trades Spot (7d)</span>
         </div>
       </summary>
       
@@ -154,16 +203,24 @@ const OrderHistoryPanel: React.FC<OrderHistoryPanelProps> = ({ openOrders, trade
               <ShoppingCart size={16} /> Ordens em Aberto
             </button>
             <button 
-              onClick={() => setActiveTab('history')}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'history' ? 'border-orange-400 text-orange-300' : 'border-transparent text-slate-400 hover:text-white'}`}
+              onClick={() => setActiveTab('all')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'all' ? 'border-orange-400 text-orange-300' : 'border-transparent text-slate-400 hover:text-white'}`}
             >
-              <ArrowRight size={16} /> Histórico de Trades
+              <ListOrdered size={16} /> Histórico de Ordens
+            </button>
+            <button 
+              onClick={() => setActiveTab('trades')}
+              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'trades' ? 'border-orange-400 text-orange-300' : 'border-transparent text-slate-400 hover:text-white'}`}
+            >
+              <History size={16} /> Histórico de Trades
             </button>
           </nav>
         </div>
         
         {isLoading ? renderLoading() : error ? renderError() : (
-          activeTab === 'open' ? renderOpenOrders() : renderTradeHistory()
+            activeTab === 'open' ? renderOpenOrders() :
+            activeTab === 'all' ? renderAllOrdersHistory() :
+            renderTradeHistory()
         )}
       </div>
     </details>

@@ -5,7 +5,7 @@ import { CandleData, Signal, BinanceTrade } from '../types';
 interface CandlestickChartProps {
   data: CandleData[];
   signals: Signal[];
-  myTrades: BinanceTrade[];
+  myTrades: BinanceTrade[]; // AJUSTE: Agora recebe todos os trades, precisa filtrar para o ativo atual.
   selectedAsset: string;
   timezone: string;
   timestamps: string[];
@@ -36,6 +36,9 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, signals, myTr
       return index >= 0 ? { coord: [index, s.price], value: 'VENDA' } : null;
     }).filter(Boolean);
 
+    // AJUSTE: myTrades agora contém o histórico de todos os ativos.
+    // É necessário filtrar apenas os trades do ativo selecionado para plotar no gráfico.
+    // A filtragem já acontece no App.tsx ao passar a prop, então `myTrades` aqui já está correto.
     const myTradePoints = myTrades.map(trade => {
       const tradeTime = trade.time;
       const index = data.findIndex(d => tradeTime >= d.timestamp && tradeTime < d.timestamp + candleInterval);
