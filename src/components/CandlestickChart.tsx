@@ -24,7 +24,7 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, signals, myTr
     
     const candleData = data.map(d => [d.open, d.close, d.low, d.high]);
     const volumes = data.map(d => d.volume);
-    const candleInterval = 15 * 60 * 1000;
+    const candleInterval = 5 * 60 * 1000;
 
     const signalBuyPoints = signals.filter(s => s.type === 'BUY').map(s => {
       const index = data.findIndex(d => d.timestamp === s.timestamp);
@@ -151,7 +151,7 @@ const CandlestickChart: React.FC<CandlestickChartProps> = ({ data, signals, myTr
   return (
     <div className="p-4 pb-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
-        <h2 className="text-xl font-bold text-white">Gráfico de Candlestick - {selectedAsset} <span className="text-base font-medium text-slate-400">(15m)</span></h2>
+        <h2 className="text-xl font-bold text-white">Gráfico de Candlestick - {selectedAsset} <span className="text-base font-medium text-slate-400">(5m)</span></h2>
         <div className="flex items-center gap-4 text-xs text-slate-300">
           <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-sm"></div><span>Sinal de Compra</span></div>
           <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-500 rounded-sm"></div><span>Sinal de Venda</span></div>

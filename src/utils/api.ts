@@ -78,7 +78,7 @@ export const fetchChartData = async (symbol: string): Promise<CandleData[]> => {
   const startTime = Date.now() - 48 * 60 * 60 * 1000; 
 
   try {
-    const targetUrl = `${BINANCE_API_BASE_URL}/klines?symbol=${binanceSymbol}&interval=15m&startTime=${startTime}&limit=1000`;
+    const targetUrl = `${BINANCE_API_BASE_URL}/klines?symbol=${binanceSymbol}&interval=5m&startTime=${startTime}&limit=1000`;
     const response = await axios.get(targetUrl);
     return parseBinanceChartData(response.data);
   } catch (error) {
