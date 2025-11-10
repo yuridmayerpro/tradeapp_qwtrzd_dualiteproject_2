@@ -14,7 +14,14 @@ interface ToastContextType {
   toasts: ToastMessage[];
 }
 
-export const ToastContext = createContext<ToastContextType | undefined>(undefined);
+// CORREÇÃO: Fornece um valor padrão seguro para o contexto.
+// Isso evita erros de inicialização se o contexto for acessado incorretamente
+// e torna o sistema mais robusto.
+export const ToastContext = createContext<ToastContextType>({
+  addToast: () => { throw new Error('O componente tentou usar o Toast fora do ToastProvider.'); },
+  removeToast: () => { throw new Error('O componente tentou usar o Toast fora do ToastProvider.'); },
+  toasts: [],
+});
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
