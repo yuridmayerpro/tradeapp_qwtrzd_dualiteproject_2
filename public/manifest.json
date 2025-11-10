@@ -1,0 +1,23 @@
+{
+  "short_name": "Day Trade",
+  "name": "Day Trade - Análise Técnica",
+  "icons": [
+    {
+      "src": "https://i.ibb.co/HLfD5wgf/dualite-favicon.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.ibb.co/HLfD5wgf/dualite-favicon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0f172a",
+  "background_color": "#020617",
+  "description": "Plataforma profissional de day trade com gráficos de candles, análise técnica e indicadores em tempo real"
+}

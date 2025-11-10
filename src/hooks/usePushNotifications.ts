@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './useToast';
@@ -24,20 +24,38 @@ export const usePushNotifications = () => {
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
   const [isLoading, setIsLoading] = useState(true);
 
+  const { isApple, isSupported } = useMemo(() => {
+    if (typeof window === 'undefined' || !window.navigator) {
+      return { isApple: false, isSupported: false };
+    }
+    const apple = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches;
+    const hasPushManager = 'serviceWorker' in navigator && 'PushManager' in window;
+    
+    // Suporte é verdadeiro se:
+    // 1. O navegador tiver PushManager.
+    // 2. E (não for um dispositivo Apple OU for um dispositivo Apple E estiver no modo standalone).
+    const supported = hasPushManager && (!apple || standalone);
+    
+    return { isApple: apple, isSupported: supported };
+  }, []);
+
   const checkSubscription = useCallback(async () => {
-    if ('serviceWorker' in navigator && 'PushManager' in window) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        const sub = await registration.pushManager.getSubscription();
-        setIsSubscribed(!!sub);
-        setSubscription(sub);
-        setPermissionStatus(Notification.permission);
-      } catch (error) {
-        console.error("Error checking push subscription:", error);
-      }
+    if (!isSupported) {
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      setIsSubscribed(!!sub);
+      setSubscription(sub);
+      setPermissionStatus(Notification.permission);
+    } catch (error) {
+      console.error("Error checking push subscription:", error);
     }
     setIsLoading(false);
-  }, []);
+  }, [isSupported]);
 
   useEffect(() => {
     if (user) {
@@ -104,13 +122,17 @@ export const usePushNotifications = () => {
       setSubscription(null);
       setIsSubscribed(false);
       addToast('Notificações desativadas.', 'info');
-    } catch (error: any) {
+    } catch (error: any) => {
       console.error('Failed to unsubscribe:', error);
       addToast(`Falha ao desativar notificações: ${error.message}`, 'error');
     }
   };
 
   const handleToggle = async () => {
+    if (!isSupported) {
+        addToast('As notificações não são suportadas neste navegador ou dispositivo.', 'warning');
+        return;
+    }
     if (isSubscribed) {
       await unsubscribe();
     } else {
@@ -122,5 +144,5 @@ export const usePushNotifications = () => {
     }
   };
 
-  return { isSubscribed, handleToggle, permissionStatus, isLoading };
+  return { isSubscribed, handleToggle, permissionStatus, isLoading, isSupported, isApple };
 };
