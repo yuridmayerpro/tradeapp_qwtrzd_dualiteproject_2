@@ -122,7 +122,7 @@ export const usePushNotifications = () => {
       setSubscription(null);
       setIsSubscribed(false);
       addToast('Notificações desativadas.', 'info');
-    } catch (error: any) => {
+    } catch (error: any) {
       console.error('Failed to unsubscribe:', error);
       addToast(`Falha ao desativar notificações: ${error.message}`, 'error');
     }
