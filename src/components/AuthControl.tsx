@@ -58,6 +58,7 @@ const AuthControl: React.FC<AuthControlProps> = ({ onOpenBinanceConnect }) => {
               <Wallet size={16} />
               Conectar Binance
             </button>
+            <div className="my-1 h-px bg-slate-700"></div>
             <button
               onClick={signOut}
               className="w-full text-left flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-400 hover:bg-red-500/10 transition-colors"

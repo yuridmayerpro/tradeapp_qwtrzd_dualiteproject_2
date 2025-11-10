@@ -123,3 +123,13 @@ export interface BinanceTrade {
   isBuyer: boolean;
   isMaker: boolean;
 }
+
+// Add type for Push Subscription
+export interface PushSubscriptionJSON {
+  endpoint: string;
+  expirationTime: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}

@@ -18,6 +18,8 @@ import { generateSignalsAndIndicators } from './utils/technicalIndicators';
 import { LoaderCircle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { supabase } from './lib/supabaseClient';
+import ToastContainer from './components/Toast';
+import NotificationControl from './components/NotificationControl';
 
 const FEATURED_ASSETS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'BNB/USDT', 'DOGE/USDT', 'ADA/USDT', 'TRX/USDT'];
 const DEFAULT_PARAMS: IndicatorParams = {
@@ -58,6 +60,15 @@ function App() {
   const [ordersError, setOrdersError] = useState<Error | null>(null);
 
   const saveParamsTimeoutRef = useRef<number | null>(null);
+  const lastSignalRef = useRef<Signal | null>(null);
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(registration => console.log('Service Worker registered with scope:', registration.scope))
+        .catch(error => console.error('Service Worker registration failed:', error));
+    }
+  }, []);
 
   const updateTickerData = useCallback(async () => {
     const data = await fetchBinanceTickerData(FEATURED_ASSETS);
@@ -80,7 +91,6 @@ function App() {
     setIsLoading(false);
   }, []);
 
-  // AJUSTE: A função de carregar dados da carteira agora retorna os dados para encadear ações.
   const loadBinanceWalletData = useCallback(async (): Promise<BinanceAccount | null> => {
     if (!user || !isBinanceConnected) return null;
     setIsBinanceDataLoading(true);
@@ -97,7 +107,6 @@ function App() {
     }
   }, [user, isBinanceConnected]);
 
-  // AJUSTE: Nova função para buscar o histórico de TODOS os ativos relevantes, não apenas o selecionado.
   const loadFullBinanceHistory = useCallback(async (account: BinanceAccount, allAssets: BinanceAsset[]) => {
     if (!user || !isBinanceConnected) return;
 
@@ -105,18 +114,15 @@ function App() {
     setOrdersError(null);
     
     try {
-      // Busca ordens abertas (que já retorna todos os símbolos)
       const openOrders = await fetchBinanceOpenOrders();
       setBinanceOpenOrders(openOrders);
 
-      // Identifica os ativos que o usuário possui saldo
       const ownedBaseAssets = new Set(
         account.balances
           .filter(b => parseFloat(b.free) + parseFloat(b.locked) > 0)
           .map(b => b.asset)
       );
 
-      // Encontra todos os pares de negociação para os ativos possuídos
       const symbolsToFetch = allAssets
         .filter(asset => ownedBaseAssets.has(asset.baseAsset))
         .map(asset => asset.appSymbol);
@@ -124,7 +130,6 @@ function App() {
       let aggregatedTrades: BinanceTrade[] = [];
       let aggregatedAllOrders: BinanceOrder[] = [];
 
-      // Itera sequencialmente para evitar limites da API
       for (const symbol of symbolsToFetch) {
         try {
           const [trades, allOrders] = await Promise.all([
@@ -138,7 +143,6 @@ function App() {
         }
       }
       
-      // Ordena os resultados agregados por data
       aggregatedTrades.sort((a, b) => b.time - a.time);
       aggregatedAllOrders.sort((a, b) => b.time - a.time);
 
@@ -152,7 +156,6 @@ function App() {
     }
   }, [user, isBinanceConnected]);
 
-  // Main data loading effect
   useEffect(() => {
     if (authLoading) return;
 
@@ -194,7 +197,6 @@ function App() {
       await loadAssetData(assetToLoad);
       await updateTickerData();
 
-      // AJUSTE: O histórico completo agora é carregado após os dados da carteira.
       if (binanceConnected) {
         const accountData = await loadBinanceWalletData();
         if (accountData) {
@@ -209,7 +211,6 @@ function App() {
   }, [user, authLoading, loadAssetData, updateTickerData, loadBinanceWalletData, loadFullBinanceHistory]);
 
 
-  // Interval updates
   useEffect(() => {
     if (!isInitialDataLoaded) return;
     const tickerInterval = setInterval(updateTickerData, 60 * 1000);
@@ -221,7 +222,6 @@ function App() {
     };
   }, [isInitialDataLoaded, selectedAsset, loadAssetData, updateTickerData]);
 
-  // Indicator and signal generation
   useEffect(() => {
     if (candleData.length > 0) {
       const { fullData: newFullData, signals: newSignals } = generateSignalsAndIndicators(candleData, params);
@@ -234,15 +234,29 @@ function App() {
           gog: lastIndicator.gog
         });
       }
-      setSignals(newSignals.sort((a, b) => b.timestamp - a.timestamp));
+      const sortedSignals = newSignals.sort((a, b) => b.timestamp - a.timestamp);
+      setSignals(sortedSignals);
+
+      if (user && sortedSignals.length > 0 && isInitialDataLoaded) {
+        const latestSignal = sortedSignals[0];
+        if (lastSignalRef.current?.timestamp !== latestSignal.timestamp) {
+          lastSignalRef.current = latestSignal;
+
+          const title = `${latestSignal.type === 'BUY' ? '🟢' : '🔴'} Sinal de ${latestSignal.type}: ${selectedAsset}`;
+          const body = `Preço: $${latestSignal.price.toFixed(2)}. Clique para ver os detalhes.`;
+          
+          supabase.functions.invoke('send-push-notification', {
+            body: { title, body, url: window.location.href }
+          }).catch(err => console.error("Failed to send push notification:", err));
+        }
+      }
     } else {
       setFullData([]);
       setSignals([]);
       setIndicators({ adx: 0, slope: 0, gog: 0 });
     }
-  }, [candleData, params]);
+  }, [candleData, params, user, selectedAsset, isInitialDataLoaded]);
 
-  // Debounced saving of indicator parameters
   useEffect(() => {
     if (!isInitialDataLoaded || !user) return;
 
@@ -277,7 +291,6 @@ function App() {
     setIsAssetModalOpen(false);
     
     await loadAssetData(symbol);
-    // AJUSTE: A busca de histórico foi removida daqui, pois agora é independente.
 
     if (user) {
       const { error } = await supabase
@@ -294,7 +307,6 @@ function App() {
   const handleBinanceConnectSuccess = async () => {
     setIsBinanceConnected(true);
     setIsBinanceModalOpen(false);
-    // AJUSTE: Carrega o histórico completo após conectar e obter os dados da carteira.
     const accountData = await loadBinanceWalletData();
     if (accountData && allBinanceAssets.length > 0) {
       await loadFullBinanceHistory(accountData, allBinanceAssets);
@@ -308,6 +320,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-200 relative">
+      <ToastContainer />
       {(isLoading && !isAssetModalOpen && !isBinanceModalOpen) && (
         <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center z-50">
           <LoaderCircle className="w-16 h-16 text-blue-500 animate-spin" />
@@ -328,7 +341,10 @@ function App() {
               </div>
             )}
             <TimezoneSelector selectedTimezone={timezone} onTimezoneChange={setTimezone} />
-            <AuthControl onOpenBinanceConnect={() => setIsBinanceModalOpen(true)} />
+            <NotificationControl />
+            <AuthControl 
+              onOpenBinanceConnect={() => setIsBinanceModalOpen(true)} 
+            />
             <div className="px-4 py-2 bg-emerald-600/20 border border-emerald-500/30 rounded-lg flex items-center gap-2">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
               <span className="text-emerald-400 font-semibold text-sm">AO VIVO</span>
@@ -411,7 +427,6 @@ function App() {
   );
 }
 
-// Helper para converter o formato do app para o da Binance API
 const toBinanceSymbol = (appSymbol: string): string => appSymbol.replace('/', '');
 
 export default App;
